@@ -445,7 +445,7 @@ app.prepare().then(() => {
       socket.join(roomId.toUpperCase());
 
       addLog(room, `👋 ${playerName} הצטרף לחדר!`);
-      io.to(room.id).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb({ ok: true, roomId: room.id, room: sanitizeRoom(room, socket.id) });
     });
 
@@ -468,7 +468,7 @@ app.prepare().then(() => {
         if (room.pendingAction?.playerId === oldId) room.pendingAction.playerId = socket.id;
         socket.join(room.id);
         addLog(room, `🔄 ${playerName} התחבר מחדש!`);
-        io.to(room.id).emit('room_update', sanitizeRoom(room, socket.id));
+        broadcastRoomUpdate(room);
         return cb({ ok: true, roomId: room.id, room: sanitizeRoom(room, socket.id) });
       }
       cb({ ok: false, error: 'שם שחקן לא נמצא בחדר' });
@@ -490,7 +490,7 @@ app.prepare().then(() => {
       room.players.forEach(p => { p.cash = room.houseRules.startCash; });
 
       addLog(room, '🎮 המשחק התחיל! בהצלחה לכולם!');
-      io.to(roomId).emit('game_started', sanitizeRoom(room, socket.id));
+      broadcastGameStarted(room);
       cb?.({ ok: true });
     });
 
@@ -528,7 +528,7 @@ app.prepare().then(() => {
             addLog(room, `🔒 ${player.name} נשאר בכלא (תור ${player.jailTurns}/3).`);
             room.diceRolled = true;
             io.to(roomId).emit('dice_result', { d1, d2, total, isDouble, playerId: player.id });
-            io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+            broadcastRoomUpdate(room);
             return cb?.({ ok: true, d1, d2 });
           }
         }
@@ -543,7 +543,7 @@ app.prepare().then(() => {
           room.doublesCount = 0;
           addLog(room, `🚔 3 זוגות ברציפות — ${player.name} לכלא!`);
           io.to(roomId).emit('dice_result', { d1, d2, total, isDouble, playerId: player.id });
-          io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+          broadcastRoomUpdate(room);
           return cb?.({ ok: true, d1, d2 });
         }
       }
@@ -570,7 +570,7 @@ app.prepare().then(() => {
       checkGameEnd(room);
 
       io.to(roomId).emit('dice_result', { d1, d2, total, isDouble, playerId: player.id });
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true, d1, d2, total });
 
       // If doubles and not in jail — auto-continue (client shows dice, then player can act)
@@ -578,7 +578,7 @@ app.prepare().then(() => {
         room.diceRolled   = false; // allow another roll
         room.pendingAction = null;
         addLog(room, `🎲 ${player.name} קיבל זוג — תוכל להטיל שוב!`);
-        io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+        broadcastRoomUpdate(room);
       }
     });
 
@@ -602,7 +602,7 @@ app.prepare().then(() => {
       room.pendingAction = null;
 
       addLog(room, `🏠 ${player.name} קנה את ${tile.name} ב-₪${tile.price}!`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -620,7 +620,7 @@ app.prepare().then(() => {
       if (room.houseRules.auctionOnDecline && pending?.tileId != null) {
         room.pendingAction = { type: 'auction', tileId: pending.tileId };
       }
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -637,7 +637,7 @@ app.prepare().then(() => {
       advanceTurn(room);
       checkGameEnd(room);
 
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       const next = currentPlayer(room);
       io.to(roomId).emit('turn_changed', { playerId: next?.id, playerName: next?.name });
       cb?.({ ok: true });
@@ -673,7 +673,7 @@ app.prepare().then(() => {
 
       const levelName = currentLevel + 1 === 5 ? 'מלון' : `בית ${currentLevel + 1}`;
       addLog(room, `🏗️ ${player.name} בנה ${levelName} ב-${tile.name} (₪${tile.housePrice})!`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -700,7 +700,7 @@ app.prepare().then(() => {
       player.cash += Math.floor(tile.housePrice / 2);
       const levelName = currentLevel - 1 === 0 ? 'ללא בתים' : `בית ${currentLevel - 1}`;
       addLog(room, `🏚️ ${player.name} מכר בית ב-${tile.name} → ${levelName}.`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -718,7 +718,7 @@ app.prepare().then(() => {
       room.mortgaged[tileId] = true;
       player.cash += tile.mortgage;
       addLog(room, `📋 ${player.name} משכן את ${tile.name} וקיבל ₪${tile.mortgage}.`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -738,7 +738,7 @@ app.prepare().then(() => {
       room.mortgaged[tileId] = false;
       player.cash -= cost;
       addLog(room, `✅ ${player.name} פדה משכנתא על ${tile.name} ב-₪${cost}.`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -755,7 +755,7 @@ app.prepare().then(() => {
       player.inJail    = false;
       player.jailTurns = 0;
       addLog(room, `💸 ${player.name} שילם ₪50 ויצא מהכלא.`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -771,7 +771,7 @@ app.prepare().then(() => {
       player.inJail    = false;
       player.jailTurns = 0;
       addLog(room, `🔑 ${player.name} השתמש בכרטיס יציאה מהכלא!`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -791,7 +791,7 @@ app.prepare().then(() => {
       };
 
       addLog(room, `🤝 ${sender.name} הציע עסקה ל-${target.name}!`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       // Notify target specifically
       io.to(targetId).emit('trade_received', { senderId: socket.id, senderName: sender.name, offer });
       cb?.({ ok: true });
@@ -810,7 +810,7 @@ app.prepare().then(() => {
 
       if (!accepted) {
         addLog(room, `❌ ${target.name} דחה את העסקה.`);
-        io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+        broadcastRoomUpdate(room);
         return cb?.({ ok: true });
       }
 
@@ -854,7 +854,7 @@ app.prepare().then(() => {
       });
 
       addLog(room, `🤝 ${sender.name} ו-${target.name} סגרו עסקה!`);
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
 
@@ -876,7 +876,7 @@ app.prepare().then(() => {
         if (player) {
           player.connected = false;
           addLog(room, `⚠️ ${player.name} התנתק. ממתינים לחזרתו...`);
-          io.to(room.id).emit('room_update', sanitizeRoom(room, socket.id));
+          broadcastRoomUpdate(room);
         }
       });
     });
@@ -887,7 +887,7 @@ app.prepare().then(() => {
       if (!room || room.host !== socket.id) return cb?.({ ok: false });
       room.players = room.players.filter(p => p.id !== targetId);
       io.to(targetId).emit('kicked');
-      io.to(roomId).emit('room_update', sanitizeRoom(room, socket.id));
+      broadcastRoomUpdate(room);
       cb?.({ ok: true });
     });
   });
@@ -912,6 +912,20 @@ app.prepare().then(() => {
       winner:           room.winner,
       myId:             mySocketId,
     };
+  }
+
+  // Send a personalised room_update to every player (each gets their own myId)
+  function broadcastRoomUpdate(room) {
+    room.players.forEach(p => {
+      io.to(p.id).emit('room_update', sanitizeRoom(room, p.id));
+    });
+  }
+
+  // Send a personalised game_started to every player
+  function broadcastGameStarted(room) {
+    room.players.forEach(p => {
+      io.to(p.id).emit('game_started', sanitizeRoom(room, p.id));
+    });
   }
 
   function checkGameEnd(room) {

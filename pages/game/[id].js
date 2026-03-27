@@ -21,10 +21,35 @@ const DicePopup    = dynamic(() => import('../../components/Game/DicePopup'),   
 
 const ROLL_DURATION   = 3000;  // ms — must match Dice component
 const STEP_DURATION   = 1000;  // ms per tile during movement
-const ZOOM_IN_SCALE   = 1.8;
+const ZOOM_IN_SCALE   = 2.0;
 const ZOOM_TRANSITION = '0.4s ease';
 
+// Board geometry constants (must match Board.js)
+const TILE_SIZE   = 56;
+const CORNER_SIZE = Math.floor(TILE_SIZE * 1.6); // 89
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Returns the pixel center {x, y} of board tile at index 0-39
+function getTileCenter(pos) {
+  let row, col;
+  if (pos === 0)       { row = 10; col = 10; }
+  else if (pos <= 9)   { row = 10; col = 10 - pos; }
+  else if (pos === 10) { row = 10; col = 0; }
+  else if (pos <= 19)  { row = 20 - pos; col = 0; }
+  else if (pos === 20) { row = 0;  col = 0; }
+  else if (pos <= 29)  { row = 0;  col = pos - 20; }
+  else if (pos === 30) { row = 0;  col = 10; }
+  else                 { row = pos - 30; col = 10; }
+
+  const cx = col === 0  ? CORNER_SIZE / 2
+           : col === 10 ? CORNER_SIZE * 2 + TILE_SIZE * 9 - CORNER_SIZE / 2
+           : CORNER_SIZE + TILE_SIZE * (col - 1) + TILE_SIZE / 2;
+  const cy = row === 0  ? CORNER_SIZE / 2
+           : row === 10 ? CORNER_SIZE * 2 + TILE_SIZE * 9 - CORNER_SIZE / 2
+           : CORNER_SIZE + TILE_SIZE * (row - 1) + TILE_SIZE / 2;
+  return { x: cx, y: cy };
+}
 
 export default function GamePage() {
   const router = useRouter();
@@ -41,9 +66,10 @@ export default function GamePage() {
   const [chatOpen,       setChatOpen]       = useState(false);
 
   // ── Animation state ────────────────────────────────────────────────────────
-  const [displayPositions, setDisplayPositions] = useState({});
-  const [movingPlayerId,   setMovingPlayerId]   = useState(null);
-  const [boardZoom,        setBoardZoom]        = useState(1);
+  const [displayPositions,    setDisplayPositions]    = useState({});
+  const [movingPlayerId,      setMovingPlayerId]      = useState(null);
+  const [boardZoom,           setBoardZoom]           = useState(1);
+  const [boardTransformOrigin, setBoardTransformOrigin] = useState('center center');
 
   // Refs
   const myIdRef             = useRef('');
@@ -165,19 +191,29 @@ export default function GamePage() {
     // Wait for dice animation to finish before moving
     await sleep(ROLL_DURATION + 150);
 
-    // Zoom in
+    // Zoom in centred on the starting tile
+    const startCenter = getTileCenter(fromPos);
+    setBoardTransformOrigin(`${startCenter.x}px ${startCenter.y}px`);
     setBoardZoom(ZOOM_IN_SCALE);
 
-    // Step through each tile
+    // Step through each tile, updating zoom origin to follow the avatar
     for (let i = 1; i <= steps; i++) {
       const nextPos = (fromPos + i) % 40;
       await sleep(STEP_DURATION);
       updateDisplayPositions(dp => ({ ...dp, [playerId]: nextPos }));
+      const { x, y } = getTileCenter(nextPos);
+      setBoardTransformOrigin(`${x}px ${y}px`);
     }
+
+    // Snap to actual server position (handles card effects that change destination)
+    updateDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
+    const endCenter = getTileCenter(toPos);
+    setBoardTransformOrigin(`${endCenter.x}px ${endCenter.y}px`);
 
     // Brief pause on landing tile, then zoom out
     await sleep(400);
     setBoardZoom(1);
+    setBoardTransformOrigin('center center');
     setMovingPlayerId(null);
     animatingRef.current = false;
   }
@@ -271,8 +307,8 @@ export default function GamePage() {
             <div
               style={{
                 transform: `scale(${boardZoom})`,
-                transformOrigin: 'center center',
-                transition: `transform ${ZOOM_TRANSITION}`,
+                transformOrigin: boardTransformOrigin,
+                transition: `transform ${ZOOM_TRANSITION}, transform-origin ${ZOOM_TRANSITION}`,
                 willChange: 'transform',
               }}
             >
