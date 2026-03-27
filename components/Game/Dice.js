@@ -12,7 +12,7 @@ const DOTS = {
   6: [[25,25],[75,25],[25,50],[75,50],[25,75],[75,75]],
 };
 
-const ROLL_DURATION = 2000; // ms — 2 full seconds of animation
+const ROLL_DURATION = 3000; // ms — 3 full seconds of animation
 
 function DieFace({ value, rolling, color = '#6366f1' }) {
   const [display, setDisplay] = useState(value || 1);
@@ -25,7 +25,7 @@ function DieFace({ value, rolling, color = '#6366f1' }) {
         setDisplay(Math.floor(Math.random() * 6) + 1);
       }, 60);
 
-      // Snap to final value near the end of the 2-second window
+      // Snap to final value near the end of the 3-second window
       const snapTimer = setTimeout(() => {
         clearInterval(intervalRef.current);
         setDisplay(value || 1);

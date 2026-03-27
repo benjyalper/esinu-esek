@@ -17,10 +17,11 @@ const PropertyModal= dynamic(() => import('../../components/Game/PropertyModal')
 const Chat         = dynamic(() => import('../../components/UI/Chat'),            { ssr: false });
 const WinnerModal  = dynamic(() => import('../../components/Game/WinnerModal'),   { ssr: false });
 const Dice         = dynamic(() => import('../../components/Game/Dice'),          { ssr: false });
+const DicePopup    = dynamic(() => import('../../components/Game/DicePopup'),     { ssr: false });
 
-const ROLL_DURATION   = 2000;  // ms — must match Dice component
-const STEP_DURATION   = 250;   // ms per tile during movement
-const ZOOM_IN_SCALE   = 1.2;
+const ROLL_DURATION   = 3000;  // ms — must match Dice component
+const STEP_DURATION   = 1000;  // ms per tile during movement
+const ZOOM_IN_SCALE   = 1.8;
 const ZOOM_TRANSITION = '0.4s ease';
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -33,6 +34,7 @@ export default function GamePage() {
   const [myId,           setMyId]           = useState('');
   const [diceResult,     setDiceResult]     = useState(null);
   const [diceRolling,    setDiceRolling]    = useState(false);
+  const [dicePopupVisible, setDicePopupVisible] = useState(false);
   const [chatMessages,   setChatMessages]   = useState([]);
   const [selectedTile,   setSelectedTile]   = useState(null);
   const [tradeOpen,      setTradeOpen]      = useState(false);
@@ -43,10 +45,20 @@ export default function GamePage() {
   const [movingPlayerId,   setMovingPlayerId]   = useState(null);
   const [boardZoom,        setBoardZoom]        = useState(1);
 
-  // Ref to track previous positions (survives re-renders without triggering effects)
-  const prevPositionsRef = useRef({});
-  const animatingRef     = useRef(false);
-  const myIdRef          = useRef('');
+  // Refs
+  const myIdRef             = useRef('');
+  const animatingRef        = useRef(false);
+  const displayPositionsRef = useRef({});  // mirror of displayPositions for use inside async fns
+  const pendingMoveRef      = useRef(null); // { playerId, steps } seeded from dice_result
+
+  // Keep displayPositionsRef in sync
+  function updateDisplayPositions(updater) {
+    setDisplayPositions(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      displayPositionsRef.current = next;
+      return next;
+    });
+  }
 
   // ── Socket setup ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -59,35 +71,47 @@ export default function GamePage() {
       myIdRef.current = updatedRoom.myId;
       setMyId(updatedRoom.myId);
 
-      const prev = prevPositionsRef.current;
-
       // First load — init display positions without animation
-      if (Object.keys(prev).length === 0) {
+      if (Object.keys(displayPositionsRef.current).length === 0) {
         const init = {};
         updatedRoom.players.forEach(p => { init[p.id] = p.position; });
+        displayPositionsRef.current = init;
         setDisplayPositions(init);
-        updatedRoom.players.forEach(p => { prev[p.id] = p.position; });
         return;
       }
 
-      // Detect moved players and animate them
-      updatedRoom.players.forEach(p => {
-        const wasAt = prev[p.id];
-        if (wasAt !== undefined && wasAt !== p.position && !animatingRef.current) {
-          animateMove(p.id, wasAt, p.position);
-        } else if (wasAt === undefined) {
-          // New player joined mid-game
-          setDisplayPositions(dp => ({ ...dp, [p.id]: p.position }));
-        }
-        prev[p.id] = p.position;
-      });
+      // If we have a pending move seeded from dice_result, animate it
+      const pending = pendingMoveRef.current;
+      if (pending && !animatingRef.current) {
+        const { playerId, steps } = pending;
+        pendingMoveRef.current = null;
+        const fromPos = displayPositionsRef.current[playerId] ?? 0;
+        // Find what the server says the final position is
+        const serverPlayer = updatedRoom.players.find(p => p.id === playerId);
+        const toPos = serverPlayer ? serverPlayer.position : (fromPos + steps) % 40;
+        animateMove(playerId, fromPos, toPos, steps);
+      } else {
+        // Fallback: snap any new players to their server position
+        updatedRoom.players.forEach(p => {
+          if (displayPositionsRef.current[p.id] === undefined) {
+            updateDisplayPositions(dp => ({ ...dp, [p.id]: p.position }));
+          }
+        });
+      }
     });
 
     socket.on('dice_result', ({ d1, d2, total, isDouble, playerId }) => {
-      // Start 2-second dice animation immediately
+      // Seed pending move BEFORE room_update arrives
+      pendingMoveRef.current = { playerId, steps: total };
+
+      // Show dice popup and start rolling animation
       setDiceRolling(true);
       setDiceResult({ d1, d2, total, isDouble, playerId });
+      setDicePopupVisible(true);
+
+      // Stop rolling after ROLL_DURATION, keep popup visible 1 more second then close
       setTimeout(() => setDiceRolling(false), ROLL_DURATION);
+      setTimeout(() => setDicePopupVisible(false), ROLL_DURATION + 1200);
     });
 
     socket.on('turn_changed', () => {});
@@ -103,8 +127,8 @@ export default function GamePage() {
         setMyId(res.room.myId);
         const init = {};
         res.room.players.forEach(p => { init[p.id] = p.position; });
+        displayPositionsRef.current = init;
         setDisplayPositions(init);
-        res.room.players.forEach(p => { prevPositionsRef.current[p.id] = p.position; });
         if (res.room.gameState === 'lobby') router.push(`/lobby/${id}`);
       } else {
         router.push('/');
@@ -120,27 +144,26 @@ export default function GamePage() {
   }, [id]);
 
   // ── Step-by-step movement animation ────────────────────────────────────────
-  async function animateMove(playerId, fromPos, toPos) {
+  async function animateMove(playerId, fromPos, toPos, steps) {
     if (animatingRef.current) {
-      // If already animating, just snap the new player to destination
-      setDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
+      // Already animating — snap to destination
+      updateDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
       return;
     }
 
-    const steps = (toPos - fromPos + 40) % 40;
-    if (steps === 0) return;
-
-    // If jump is > 12 tiles it's likely a card/jail teleport — snap instantly
+    // If jump > 12 tiles it's likely a card/jail teleport — snap instantly
     if (steps > 12) {
-      setDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
+      updateDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
       return;
     }
+
+    if (steps === 0) return;
 
     animatingRef.current = true;
     setMovingPlayerId(playerId);
 
-    // Wait for dice animation to finish before moving (dice rolls 2 sec)
-    await sleep(ROLL_DURATION + 100);
+    // Wait for dice animation to finish before moving
+    await sleep(ROLL_DURATION + 150);
 
     // Zoom in
     setBoardZoom(ZOOM_IN_SCALE);
@@ -149,11 +172,11 @@ export default function GamePage() {
     for (let i = 1; i <= steps; i++) {
       const nextPos = (fromPos + i) % 40;
       await sleep(STEP_DURATION);
-      setDisplayPositions(dp => ({ ...dp, [playerId]: nextPos }));
+      updateDisplayPositions(dp => ({ ...dp, [playerId]: nextPos }));
     }
 
     // Brief pause on landing tile, then zoom out
-    await sleep(300);
+    await sleep(400);
     setBoardZoom(1);
     setMovingPlayerId(null);
     animatingRef.current = false;
@@ -301,6 +324,15 @@ export default function GamePage() {
             </div>
           </div>
         </div>
+
+        {/* Dice popup overlay */}
+        <DicePopup
+          d1={diceResult?.d1}
+          d2={diceResult?.d2}
+          rolling={diceRolling}
+          isDouble={diceResult?.isDouble}
+          visible={dicePopupVisible}
+        />
 
         {/* Modals */}
         {pendingTradeForMe && (
