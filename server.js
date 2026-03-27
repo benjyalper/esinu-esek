@@ -8,6 +8,9 @@
 const { createServer } = require('http');
 const { parse }        = require('url');
 const next             = require('next');
+
+// Ensure NODE_ENV is set (Railway may not set it via the script)
+if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production';
 const { Server }       = require('socket.io');
 const { v4: uuidv4 }   = require('uuid');
 
@@ -15,6 +18,7 @@ const { BOARD_TILES }           = require('./data/board');
 const { CHANCE_CARDS, COMMUNITY_CHEST_CARDS } = require('./data/cards');
 
 const dev  = process.env.NODE_ENV !== 'production';
+const hostname = '0.0.0.0'; // needed for Railway / Docker
 const port = process.env.PORT || 3010;
 const app  = next({ dev });
 const handle = app.getRequestHandler();
@@ -918,7 +922,7 @@ app.prepare().then(() => {
     }
   }
 
-  httpServer.listen(port, () => {
-    console.log(`🎮 עשינו עסק — שרת רץ על http://localhost:${port}`);
+  httpServer.listen(port, hostname, () => {
+    console.log(`🎮 עשינו עסק — שרת רץ על http://${hostname}:${port}`);
   });
 });
