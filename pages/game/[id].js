@@ -256,6 +256,10 @@ export default function GamePage() {
                     className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xl">
               💬
             </button>
+            <button onClick={() => router.push('/')}
+                    className="px-3 py-1 rounded-lg bg-red-700 hover:bg-red-600 text-white text-sm font-bold">
+              יציאה
+            </button>
           </div>
         </header>
 
