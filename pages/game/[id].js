@@ -31,23 +31,27 @@ const BOARD_CENTER = (CORNER_SIZE * 2 + TILE_SIZE * 9) / 2; // 341 — center of
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// Returns the pixel center {x, y} of board tile at index 0-39
+// Returns the pixel center {x, y} of board tile at index 0-39.
+// The board renders with dir="rtl": col 0 = visual RIGHT (x≈638), col 10 = visual LEFT (x≈45).
+// Path: 0(btm-left)→up left→Jail(top-left)→right top→FP(top-right)→down right→GTJ(btm-right)→left bottom→0
 function getTileCenter(pos) {
   let row, col;
-  if (pos === 0)       { row = 10; col = 10; }
-  else if (pos <= 9)   { row = 10; col = 10 - pos; }
-  else if (pos === 10) { row = 10; col = 0; }
-  else if (pos <= 19)  { row = 20 - pos; col = 0; }
-  else if (pos === 20) { row = 0;  col = 0; }
-  else if (pos <= 29)  { row = 0;  col = pos - 20; }
-  else if (pos === 30) { row = 0;  col = 10; }
-  else                 { row = pos - 30; col = 10; }
+  if (pos === 0)       { row = 10; col = 10; }  // GO:  bottom-left
+  else if (pos <= 9)   { row = 10 - pos; col = 10; }  // 1-9:  left col going up
+  else if (pos === 10) { row = 0;  col = 10; }  // Jail: top-left
+  else if (pos <= 19)  { row = 0;  col = 20 - pos; }  // 11-19: top row going right
+  else if (pos === 20) { row = 0;  col = 0;  }  // FP:  top-right
+  else if (pos <= 29)  { row = pos - 20; col = 0;  }  // 21-29: right col going down
+  else if (pos === 30) { row = 10; col = 0;  }  // GTJ: bottom-right
+  else                 { row = 10; col = pos - 30; }  // 31-39: bottom row going left
 
-  const cx = col === 0  ? CORNER_SIZE / 2
-           : col === 10 ? CORNER_SIZE * 2 + TILE_SIZE * 9 - CORNER_SIZE / 2
-           : CORNER_SIZE + TILE_SIZE * (col - 1) + TILE_SIZE / 2;
+  const BOARD_W = CORNER_SIZE * 2 + TILE_SIZE * 9; // 682
+  // In RTL: col 0 → visual right (BOARD_W - CORNER/2), col 10 → visual left (CORNER/2)
+  const cx = col === 0  ? BOARD_W - CORNER_SIZE / 2
+           : col === 10 ? CORNER_SIZE / 2
+           : BOARD_W - CORNER_SIZE - TILE_SIZE * (col - 1) - TILE_SIZE / 2;
   const cy = row === 0  ? CORNER_SIZE / 2
-           : row === 10 ? CORNER_SIZE * 2 + TILE_SIZE * 9 - CORNER_SIZE / 2
+           : row === 10 ? BOARD_W - CORNER_SIZE / 2
            : CORNER_SIZE + TILE_SIZE * (row - 1) + TILE_SIZE / 2;
   return { x: cx, y: cy };
 }

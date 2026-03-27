@@ -46,9 +46,9 @@ export default function Board({ room, myId, onTileClick, displayPositions = {}, 
 
           let rotation = 0;
           if (!isCorner) {
-            if (r === 0)  rotation = 180;
-            if (c === 0)  rotation = 90;
-            if (c === 10) rotation = -90;
+            if (r === 0)  rotation = 180;   // top row  → face down
+            if (c === 0)  rotation = -90;  // visual right col → face left (toward center)
+            if (c === 10) rotation = 90;   // visual left col  → face right (toward center)
           }
 
           const ownerId  = room?.propertyOwners?.[tileId];
