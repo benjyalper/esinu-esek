@@ -1,0 +1,294 @@
+/**
+ * /game/[id] — Main game page
+ */
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/router';
+import Head from 'next/head';
+import dynamic from 'next/dynamic';
+import { getSocket } from '../../lib/socketClient';
+
+// Dynamic imports (no SSR) because they use browser APIs
+const Board        = dynamic(() => import('../../components/Board/Board'),        { ssr: false });
+const PlayerPanel  = dynamic(() => import('../../components/Game/PlayerPanel'),   { ssr: false });
+const ActionPanel  = dynamic(() => import('../../components/Game/ActionPanel'),   { ssr: false });
+const EventLog     = dynamic(() => import('../../components/Game/EventLog'),      { ssr: false });
+const CardModal    = dynamic(() => import('../../components/Game/CardModal'),     { ssr: false });
+const TradeModal   = dynamic(() => import('../../components/Game/TradeModal'),    { ssr: false });
+const PropertyModal= dynamic(() => import('../../components/Game/PropertyModal'), { ssr: false });
+const Chat         = dynamic(() => import('../../components/UI/Chat'),            { ssr: false });
+const WinnerModal  = dynamic(() => import('../../components/Game/WinnerModal'),   { ssr: false });
+const Dice         = dynamic(() => import('../../components/Game/Dice'),          { ssr: false });
+
+export default function GamePage() {
+  const router = useRouter();
+  const { id } = router.query;
+
+  const [room,           setRoom]           = useState(null);
+  const [myId,           setMyId]           = useState('');
+  const [diceResult,     setDiceResult]     = useState(null);   // { d1, d2, total }
+  const [diceRolling,    setDiceRolling]    = useState(false);
+  const [chatMessages,   setChatMessages]   = useState([]);
+  const [selectedTile,   setSelectedTile]   = useState(null);   // for PropertyModal
+  const [tradeOpen,      setTradeOpen]      = useState(false);
+  const [chatOpen,       setChatOpen]       = useState(false);
+
+  // ── Socket setup ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!id) return;
+    const socket     = getSocket();
+    const playerName = sessionStorage.getItem('playerName');
+
+    socket.on('room_update', (updatedRoom) => {
+      setRoom(updatedRoom);
+      setMyId(updatedRoom.myId);
+    });
+
+    socket.on('dice_result', ({ d1, d2, total, isDouble, playerId }) => {
+      setDiceRolling(true);
+      setDiceResult({ d1, d2, total, isDouble, playerId });
+      setTimeout(() => setDiceRolling(false), 700);
+    });
+
+    socket.on('turn_changed', ({ playerId, playerName: name }) => {
+      // Toast or notification could go here
+    });
+
+    socket.on('chat_message', (msg) => {
+      setChatMessages(prev => [...prev.slice(-99), msg]);
+    });
+
+    // Reconnect / load initial state
+    socket.emit('get_room', { roomId: id, playerName }, (res) => {
+      if (res.ok) {
+        setRoom(res.room);
+        setMyId(res.room.myId);
+        if (res.room.gameState === 'lobby') router.push(`/lobby/${id}`);
+      } else {
+        router.push('/');
+      }
+    });
+
+    return () => {
+      socket.off('room_update');
+      socket.off('dice_result');
+      socket.off('turn_changed');
+      socket.off('chat_message');
+    };
+  }, [id]);
+
+  // ── Derived state ─────────────────────────────────────────────────────────
+  const me      = room?.players.find(p => p.id === myId);
+  const current = room?.players[room?.currentTurn];
+  const isMyTurn= current?.id === myId;
+  const socket  = getSocket();
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+  const rollDice = useCallback(() => {
+    if (!isMyTurn || room?.diceRolled) return;
+    socket.emit('roll_dice', { roomId: id });
+  }, [isMyTurn, room?.diceRolled, id]);
+
+  const buyProperty = useCallback(() => {
+    const tileId = room?.pendingAction?.tileId;
+    if (tileId == null) return;
+    socket.emit('buy_property', { roomId: id, tileId });
+  }, [room?.pendingAction, id]);
+
+  const declineBuy = useCallback(() => {
+    socket.emit('decline_buy', { roomId: id });
+  }, [id]);
+
+  const endTurn = useCallback(() => {
+    socket.emit('end_turn', { roomId: id });
+  }, [id]);
+
+  const upgradeProperty = useCallback((tileId) => {
+    socket.emit('upgrade_property', { roomId: id, tileId });
+  }, [id]);
+
+  const sellHouse = useCallback((tileId) => {
+    socket.emit('sell_house', { roomId: id, tileId });
+  }, [id]);
+
+  const mortgageProperty = useCallback((tileId) => {
+    socket.emit('mortgage_property', { roomId: id, tileId });
+  }, [id]);
+
+  const unmortgageProperty = useCallback((tileId) => {
+    socket.emit('unmortgage_property', { roomId: id, tileId });
+  }, [id]);
+
+  const payJailFine = useCallback(() => {
+    socket.emit('pay_jail_fine', { roomId: id });
+  }, [id]);
+
+  const useJailCard = useCallback(() => {
+    socket.emit('use_jail_card', { roomId: id });
+  }, [id]);
+
+  const sendTrade = useCallback((targetId, offer) => {
+    socket.emit('trade_offer', { roomId: id, targetId, offer });
+    setTradeOpen(false);
+  }, [id]);
+
+  const respondTrade = useCallback((accepted) => {
+    socket.emit('trade_response', { roomId: id, accepted });
+  }, [id]);
+
+  const sendChat = useCallback((text) => {
+    socket.emit('chat_message', { roomId: id, text });
+  }, [id]);
+
+  // ── Pending trade for me? ─────────────────────────────────────────────────
+  const pendingTradeForMe = room?.pendingAction?.type === 'trade' &&
+                            room?.pendingAction?.targetId === myId;
+
+  if (!room) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-5xl animate-spin-slow mb-4">🎲</div>
+          <p className="text-slate-400">טוען משחק...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Head><title>עשינו עסק 🎲 — {id}</title></Head>
+
+      <div className="min-h-screen flex flex-col bg-slate-900 overflow-hidden">
+
+        {/* Top bar */}
+        <header className="bg-slate-800 border-b border-slate-700 px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎲</span>
+            <span className="font-black text-white text-lg">עשינו עסק</span>
+            <span className="text-slate-500 text-sm">חדר: {id}</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm">
+            {current && (
+              <span className={`px-3 py-1 rounded-full text-sm font-bold
+                ${isMyTurn ? 'bg-indigo-600 text-white animate-pulse-fast' : 'bg-slate-700 text-slate-300'}`}>
+                {isMyTurn ? '🎯 התור שלך!' : `⏳ תור ${current.name}`}
+              </span>
+            )}
+            <button onClick={() => setChatOpen(o => !o)}
+                    className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-xl">
+              💬
+            </button>
+          </div>
+        </header>
+
+        {/* Main layout */}
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* Board area */}
+          <div className="flex-1 flex flex-col items-center justify-center p-2 overflow-auto">
+            <Board
+              room={room}
+              myId={myId}
+              onTileClick={(tileId) => setSelectedTile(tileId)}
+            />
+
+            {/* Dice display */}
+            <div className="mt-3">
+              <Dice
+                d1={diceResult?.d1}
+                d2={diceResult?.d2}
+                rolling={diceRolling}
+                isDouble={diceResult?.isDouble}
+              />
+            </div>
+          </div>
+
+          {/* Right sidebar */}
+          <div className="w-72 flex flex-col border-r border-slate-700 overflow-hidden">
+            {/* Action panel */}
+            <div className="flex-shrink-0">
+              <ActionPanel
+                room={room}
+                myId={myId}
+                isMyTurn={isMyTurn}
+                onRoll={rollDice}
+                onBuy={buyProperty}
+                onDecline={declineBuy}
+                onEndTurn={endTurn}
+                onPayJailFine={payJailFine}
+                onUseJailCard={useJailCard}
+                onOpenTrade={() => setTradeOpen(true)}
+              />
+            </div>
+
+            {/* Player list */}
+            <div className="flex-1 overflow-auto">
+              <PlayerPanel
+                room={room}
+                myId={myId}
+                onSelectTile={setSelectedTile}
+                onUpgrade={upgradeProperty}
+                onSellHouse={sellHouse}
+                onMortgage={mortgageProperty}
+                onUnmortgage={unmortgageProperty}
+              />
+            </div>
+
+            {/* Event log */}
+            <div className="flex-shrink-0 h-36 overflow-auto border-t border-slate-700">
+              <EventLog events={room.eventLog} />
+            </div>
+          </div>
+        </div>
+
+        {/* Modals */}
+        {pendingTradeForMe && (
+          <TradeModal
+            room={room}
+            myId={myId}
+            onAccept={() => respondTrade(true)}
+            onDecline={() => respondTrade(false)}
+          />
+        )}
+
+        {tradeOpen && !pendingTradeForMe && (
+          <TradeModal
+            room={room}
+            myId={myId}
+            mode="offer"
+            onSend={sendTrade}
+            onClose={() => setTradeOpen(false)}
+          />
+        )}
+
+        {selectedTile !== null && (
+          <PropertyModal
+            tileId={selectedTile}
+            room={room}
+            myId={myId}
+            onClose={() => setSelectedTile(null)}
+            onUpgrade={upgradeProperty}
+            onSellHouse={sellHouse}
+            onMortgage={mortgageProperty}
+            onUnmortgage={unmortgageProperty}
+          />
+        )}
+
+        {room.gameState === 'finished' && (
+          <WinnerModal room={room} myId={myId} />
+        )}
+
+        {/* Chat sidebar */}
+        {chatOpen && (
+          <Chat
+            messages={chatMessages}
+            myId={myId}
+            players={room.players}
+            onSend={sendChat}
+            onClose={() => setChatOpen(false)}
+          />
+        )}
+      </div>
+    </>
+  );
+}

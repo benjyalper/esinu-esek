@@ -1,0 +1,242 @@
+/**
+ * Card decks for "עשינו עסק"
+ * Two decks: Chance (קלפי הזדמנות) and Community Chest (קלפי אוצר)
+ *
+ * Card effect types:
+ *  collect_from_bank, pay_to_bank, collect_from_players, pay_to_players,
+ *  move_to, move_steps, go_to_jail, get_out_of_jail, move_to_nearest_railroad,
+ *  move_to_nearest_utility, pay_per_property, collect_birthday
+ */
+
+const CHANCE_CARDS = [
+  {
+    id: 'ch1',
+    text: 'בובספוג הרוויח מהמבורגרים! קבל ₪150 מהבנק.',
+    type: 'collect_from_bank',
+    amount: 150,
+    emoji: '🍔',
+  },
+  {
+    id: 'ch2',
+    text: 'פטריק שבר משהו שלך. שלם ₪50 לבנק.',
+    type: 'pay_to_bank',
+    amount: 50,
+    emoji: '🌟',
+  },
+  {
+    id: 'ch3',
+    text: 'עבור ל"התחלה" וקבל ₪200!',
+    type: 'move_to',
+    position: 0,
+    collectGo: true,
+    emoji: '🏁',
+  },
+  {
+    id: 'ch4',
+    text: 'סקווידוויד ניגן קונצרט גרוע. כולם ישנו ואתה לכדא!',
+    type: 'go_to_jail',
+    emoji: '🎷',
+  },
+  {
+    id: 'ch5',
+    text: 'נסע ל"מסעדת הסרטן הפריך" — מה שניגן הסרטן, הוא ינגן!',
+    type: 'move_to',
+    position: 3,
+    collectGo: true,
+    emoji: '🦀',
+  },
+  {
+    id: 'ch6',
+    text: 'גנב מוח רנדומלי ברחוב Steal a Brainrot. קדמה ל-11.',
+    type: 'move_to',
+    position: 11,
+    collectGo: true,
+    emoji: '🧠',
+  },
+  {
+    id: 'ch7',
+    text: 'זכית בתחרות Brawl Stars! קבל ₪100 מכל שחקן.',
+    type: 'collect_from_players',
+    amount: 100,
+    emoji: '🏆',
+  },
+  {
+    id: 'ch8',
+    text: 'Creeper פוצץ את הבית שלך. שלם ₪80 לבנק.',
+    type: 'pay_to_bank',
+    amount: 80,
+    emoji: '💥',
+  },
+  {
+    id: 'ch9',
+    text: 'נסיעה ברכבת — עבור לתחנת הרכבת הקרובה!',
+    type: 'move_to_nearest_railroad',
+    emoji: '🚂',
+  },
+  {
+    id: 'ch10',
+    text: 'מצאת Starr Drop נדיר! קבל ₪200 מהבנק.',
+    type: 'collect_from_bank',
+    amount: 200,
+    emoji: '🌟',
+  },
+  {
+    id: 'ch11',
+    text: 'הלוואה מהבנק המינקראפטי. קבל ₪50.',
+    type: 'collect_from_bank',
+    amount: 50,
+    emoji: '💎',
+  },
+  {
+    id: 'ch12',
+    text: 'כרטיס יציאה מהכלא — שמור אותו!',
+    type: 'get_out_of_jail',
+    emoji: '🔑',
+  },
+  {
+    id: 'ch13',
+    text: 'תשלום תחזוקה לנכסים שלך: ₪40 לכל בית, ₪115 לכל מלון.',
+    type: 'pay_per_property',
+    houseAmount: 40,
+    hotelAmount: 115,
+    emoji: '🔧',
+  },
+  {
+    id: 'ch14',
+    text: 'יצאת מהObby! לאחור 3 צעדים.',
+    type: 'move_steps',
+    steps: -3,
+    emoji: '🏃',
+  },
+  {
+    id: 'ch15',
+    text: 'Gem Grab מוצלח! קבל ₪25 מהבנק.',
+    type: 'collect_from_bank',
+    amount: 25,
+    emoji: '💎',
+  },
+  {
+    id: 'ch16',
+    text: 'נסע ל"סטאר פארק"!',
+    type: 'move_to',
+    position: 37,
+    collectGo: true,
+    emoji: '🎡',
+  },
+];
+
+const COMMUNITY_CHEST_CARDS = [
+  {
+    id: 'cc1',
+    text: 'קיבלת בונוס מ-Adopt Me! קבל ₪200 מהבנק.',
+    type: 'collect_from_bank',
+    amount: 200,
+    emoji: '🐶',
+  },
+  {
+    id: 'cc2',
+    text: 'Tower Defense נפל! שלם ₪50 לבנק.',
+    type: 'pay_to_bank',
+    amount: 50,
+    emoji: '🗼',
+  },
+  {
+    id: 'cc3',
+    text: 'יום הולדת לשחקן! כל שחקן אחר נותן לך ₪50.',
+    type: 'collect_birthday',
+    amount: 50,
+    emoji: '🎂',
+  },
+  {
+    id: 'cc4',
+    text: 'המדוזות עקצו אותך. שלם ₪30 לבנק.',
+    type: 'pay_to_bank',
+    amount: 30,
+    emoji: '🪼',
+  },
+  {
+    id: 'cc5',
+    text: 'עבור ל"התחלה" וקבל ₪200!',
+    type: 'move_to',
+    position: 0,
+    collectGo: true,
+    emoji: '🏁',
+  },
+  {
+    id: 'cc6',
+    text: 'זכית בהגרלת Roblox! קבל ₪100 מהבנק.',
+    type: 'collect_from_bank',
+    amount: 100,
+    emoji: '🎰',
+  },
+  {
+    id: 'cc7',
+    text: 'שילמת על Robux... שלם ₪75 לבנק.',
+    type: 'pay_to_bank',
+    amount: 75,
+    emoji: '💸',
+  },
+  {
+    id: 'cc8',
+    text: 'כרטיס יציאה מהכלא — שמור אותו!',
+    type: 'get_out_of_jail',
+    emoji: '🔑',
+  },
+  {
+    id: 'cc9',
+    text: 'מצאת יהלומים במכרה! קבל ₪150 מהבנק.',
+    type: 'collect_from_bank',
+    amount: 150,
+    emoji: '⛏️',
+  },
+  {
+    id: 'cc10',
+    text: 'סקווידוויד תבע אותך. שלם ₪100 לבנק.',
+    type: 'pay_to_bank',
+    amount: 100,
+    emoji: '🐙',
+  },
+  {
+    id: 'cc11',
+    text: 'Brawl Ball Championship! קבל ₪25 מכל שחקן.',
+    type: 'collect_from_players',
+    amount: 25,
+    emoji: '⚽',
+  },
+  {
+    id: 'cc12',
+    text: 'תיקנת את הRedstone. שלם ₪20 לבנק.',
+    type: 'pay_to_bank',
+    amount: 20,
+    emoji: '🔴',
+  },
+  {
+    id: 'cc13',
+    text: 'מכרת אייטם נדיר ב-Brookhaven. קבל ₪50 מהבנק.',
+    type: 'collect_from_bank',
+    amount: 50,
+    emoji: '🏡',
+  },
+  {
+    id: 'cc14',
+    text: 'מס כפרי. שלם ₪25 לבנק.',
+    type: 'pay_to_bank',
+    amount: 25,
+    emoji: '🏘️',
+  },
+  {
+    id: 'cc15',
+    text: 'לך לכלא! ישירות לכלא!',
+    type: 'go_to_jail',
+    emoji: '🚔',
+  },
+  {
+    id: 'cc16',
+    text: 'מצאת חיית מחמד נדירה ב-Adopt Me! קבל ₪75 מהבנק.',
+    type: 'collect_from_bank',
+    amount: 75,
+    emoji: '🦄',
+  },
+];
+
+module.exports = { CHANCE_CARDS, COMMUNITY_CHEST_CARDS };
