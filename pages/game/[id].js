@@ -25,8 +25,9 @@ const ZOOM_IN_SCALE   = 2.0;
 const ZOOM_TRANSITION = '0.4s ease';
 
 // Board geometry constants (must match Board.js)
-const TILE_SIZE   = 56;
-const CORNER_SIZE = Math.floor(TILE_SIZE * 1.6); // 89
+const TILE_SIZE    = 56;
+const CORNER_SIZE  = Math.floor(TILE_SIZE * 1.6); // 89
+const BOARD_CENTER = (CORNER_SIZE * 2 + TILE_SIZE * 9) / 2; // 341 — center of the board
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -66,10 +67,11 @@ export default function GamePage() {
   const [chatOpen,       setChatOpen]       = useState(false);
 
   // ── Animation state ────────────────────────────────────────────────────────
-  const [displayPositions,    setDisplayPositions]    = useState({});
-  const [movingPlayerId,      setMovingPlayerId]      = useState(null);
-  const [boardZoom,           setBoardZoom]           = useState(1);
-  const [boardTransformOrigin, setBoardTransformOrigin] = useState('center center');
+  const [displayPositions, setDisplayPositions] = useState({});
+  const [movingPlayerId,   setMovingPlayerId]   = useState(null);
+  const [boardZoom,        setBoardZoom]        = useState(1);
+  const [boardTX,          setBoardTX]          = useState(0); // translate inside transform
+  const [boardTY,          setBoardTY]          = useState(0);
 
   // Refs
   const myIdRef             = useRef('');
@@ -191,29 +193,35 @@ export default function GamePage() {
     // Wait for dice animation to finish before moving
     await sleep(ROLL_DURATION + 150);
 
-    // Zoom in centred on the starting tile
-    const startCenter = getTileCenter(fromPos);
-    setBoardTransformOrigin(`${startCenter.x}px ${startCenter.y}px`);
+    // Helper: centre board on a tile using translate inside scale
+    // Formula: tx = BOARD_CENTER - tileX  (keeps tile at board centre after scale)
+    function panToTile(pos) {
+      const { x, y } = getTileCenter(pos);
+      setBoardTX(BOARD_CENTER - x);
+      setBoardTY(BOARD_CENTER - y);
+    }
+
+    // Zoom in, already centred on starting tile
+    panToTile(fromPos);
     setBoardZoom(ZOOM_IN_SCALE);
 
-    // Step through each tile, updating zoom origin to follow the avatar
+    // Step through each tile — board follows the avatar
     for (let i = 1; i <= steps; i++) {
       const nextPos = (fromPos + i) % 40;
       await sleep(STEP_DURATION);
       updateDisplayPositions(dp => ({ ...dp, [playerId]: nextPos }));
-      const { x, y } = getTileCenter(nextPos);
-      setBoardTransformOrigin(`${x}px ${y}px`);
+      panToTile(nextPos);
     }
 
-    // Snap to actual server position (handles card effects that change destination)
+    // Snap to actual server position (handles card teleports / go-to-jail)
     updateDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
-    const endCenter = getTileCenter(toPos);
-    setBoardTransformOrigin(`${endCenter.x}px ${endCenter.y}px`);
+    panToTile(toPos);
 
     // Brief pause on landing tile, then zoom out
     await sleep(400);
     setBoardZoom(1);
-    setBoardTransformOrigin('center center');
+    setBoardTX(0);
+    setBoardTY(0);
     setMovingPlayerId(null);
     animatingRef.current = false;
   }
@@ -306,9 +314,9 @@ export default function GamePage() {
           <div className="flex-1 flex flex-col items-center justify-center p-2 overflow-auto">
             <div
               style={{
-                transform: `scale(${boardZoom})`,
-                transformOrigin: boardTransformOrigin,
-                transition: `transform ${ZOOM_TRANSITION}, transform-origin ${ZOOM_TRANSITION}`,
+                transform: `scale(${boardZoom}) translate(${boardTX}px, ${boardTY}px)`,
+                transformOrigin: 'center center',
+                transition: `transform ${ZOOM_TRANSITION}`,
                 willChange: 'transform',
               }}
             >
