@@ -49,11 +49,12 @@ function generateRoomCode() {
   return code;
 }
 
-function createPlayer(socketId, name, tokenIndex, colorIndex) {
+function createPlayer(socketId, name, tokenIndex, colorIndex, avatar) {
   return {
     id:                socketId,
     name:              name || `שחקן ${tokenIndex + 1}`,
     token:             TOKENS[tokenIndex % TOKENS.length],
+    avatar:            avatar || 'spongey',   // avatar key for client rendering
     color:             PLAYER_COLORS[colorIndex % PLAYER_COLORS.length],
     position:          0,
     cash:              1500,
@@ -68,14 +69,14 @@ function createPlayer(socketId, name, tokenIndex, colorIndex) {
   };
 }
 
-function createRoom(hostId, hostName, houseRules = {}) {
+function createRoom(hostId, hostName, houseRules = {}, avatar = 'spongey') {
   const roomId = generateRoomCode();
   const playerIndex = 0;
   const room = {
     id:           roomId,
     host:         hostId,
     gameState:    'lobby',  // lobby | playing | finished
-    players:      [createPlayer(hostId, hostName, playerIndex, playerIndex)],
+    players:      [createPlayer(hostId, hostName, playerIndex, playerIndex, avatar)],
     currentTurn:  0,        // index into players array
     diceRolled:   false,
     doublesCount: 0,
@@ -424,22 +425,22 @@ app.prepare().then(() => {
     console.log(`🔌 Connected: ${socket.id}`);
 
     // ── Create Room ──────────────────────────────────────────────────────
-    socket.on('create_room', ({ playerName, houseRules }, cb) => {
-      const room = createRoom(socket.id, playerName, houseRules);
+    socket.on('create_room', ({ playerName, avatar, houseRules }, cb) => {
+      const room = createRoom(socket.id, playerName, houseRules, avatar);
       socket.join(room.id);
       cb({ ok: true, roomId: room.id, room: sanitizeRoom(room, socket.id) });
       console.log(`🏠 Room created: ${room.id} by ${playerName}`);
     });
 
     // ── Join Room ────────────────────────────────────────────────────────
-    socket.on('join_room', ({ roomId, playerName }, cb) => {
+    socket.on('join_room', ({ roomId, playerName, avatar }, cb) => {
       const room = rooms.get(roomId.toUpperCase());
       if (!room) return cb({ ok: false, error: 'חדר לא נמצא' });
       if (room.gameState !== 'lobby') return cb({ ok: false, error: 'המשחק כבר התחיל' });
       if (room.players.length >= 8) return cb({ ok: false, error: 'החדר מלא' });
 
       const idx = room.players.length;
-      const player = createPlayer(socket.id, playerName, idx, idx);
+      const player = createPlayer(socket.id, playerName, idx, idx, avatar);
       room.players.push(player);
       socket.join(roomId.toUpperCase());
 

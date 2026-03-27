@@ -14,14 +14,15 @@ export default function RoomPage() {
 
   useEffect(() => {
     if (!action) return; // wait for router
-    const playerName = sessionStorage.getItem('playerName');
+    const playerName   = sessionStorage.getItem('playerName');
+    const playerAvatar = sessionStorage.getItem('playerAvatar') || 'spongey';
     if (!playerName) { router.push('/'); return; }
 
     const socket = getSocket();
 
     if (action === 'create') {
       setStatus('יוצר חדר...');
-      socket.emit('create_room', { playerName, houseRules: {} }, (res) => {
+      socket.emit('create_room', { playerName, avatar: playerAvatar, houseRules: {} }, (res) => {
         if (res.ok) {
           sessionStorage.setItem('roomId', res.roomId);
           router.push(`/lobby/${res.roomId}`);
@@ -31,7 +32,7 @@ export default function RoomPage() {
       });
     } else if (action === 'join' && code) {
       setStatus('מצטרף לחדר...');
-      socket.emit('join_room', { roomId: code, playerName }, (res) => {
+      socket.emit('join_room', { roomId: code, playerName, avatar: playerAvatar }, (res) => {
         if (res.ok) {
           sessionStorage.setItem('roomId', res.roomId);
           router.push(`/lobby/${res.roomId}`);
