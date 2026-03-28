@@ -76,12 +76,15 @@ export default function GamePage() {
   const [boardZoom,        setBoardZoom]        = useState(1);
   const [boardTX,          setBoardTX]          = useState(0); // translate inside transform
   const [boardTY,          setBoardTY]          = useState(0);
+  const [boardFitScale,    setBoardFitScale]    = useState(1); // scale board to fit container
 
   // Refs
   const myIdRef             = useRef('');
   const animatingRef        = useRef(false);
-  const displayPositionsRef = useRef({});  // mirror of displayPositions for use inside async fns
-  const pendingMoveRef      = useRef(null); // { playerId, steps } seeded from dice_result
+  const animGenRef          = useRef(0);           // increment to cancel in-flight animation
+  const displayPositionsRef = useRef({});          // mirror of displayPositions for use inside async fns
+  const pendingMoveRef      = useRef(null);        // { playerId, steps } seeded from dice_result
+  const boardContainerRef   = useRef(null);        // for measuring available space
 
   // Keep displayPositionsRef in sync
   function updateDisplayPositions(updater) {
@@ -175,47 +178,70 @@ export default function GamePage() {
     };
   }, [id]);
 
+  // ── Fit scale: scale board to fill available container ─────────────────────
+  useEffect(() => {
+    const BOARD_SIZE = CORNER_SIZE * 2 + TILE_SIZE * 9; // 682
+    function update() {
+      const el = boardContainerRef.current;
+      if (!el) return;
+      const { width, height } = el.getBoundingClientRect();
+      const fit = Math.min(width / BOARD_SIZE, height / BOARD_SIZE, 1);
+      setBoardFitScale(fit > 0.1 ? fit : 1);
+    }
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  // ── panToTile: centre board view on a specific tile ─────────────────────────
+  function panToTile(pos) {
+    const { x, y } = getTileCenter(pos);
+    setBoardTX(BOARD_CENTER - x);
+    setBoardTY(BOARD_CENTER - y);
+  }
+
   // ── Step-by-step movement animation ────────────────────────────────────────
   async function animateMove(playerId, fromPos, toPos, steps) {
+    // If another animation is running, cancel it — increment animGenRef so the
+    // old async loop detects cancellation on its next check and exits WITHOUT
+    // further state writes (which would otherwise snap the avatar backwards).
     if (animatingRef.current) {
-      // Already animating — snap to destination
+      animGenRef.current++;
       updateDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
+      animatingRef.current = false;
+      setBoardZoom(1); setBoardTX(0); setBoardTY(0); setMovingPlayerId(null);
       return;
     }
 
-    // If jump > 12 tiles it's likely a card/jail teleport — snap instantly
+    // Card/jail teleport — snap instantly, no step animation
     if (steps > 12) {
       updateDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
       return;
     }
-
-    if (steps === 0) return;
+    if (steps <= 0) return;
 
     animatingRef.current = true;
+    const myGen = ++animGenRef.current;   // unique ID for this animation
     setMovingPlayerId(playerId);
 
     // Wait for dice animation to finish before moving
     await sleep(ROLL_DURATION + 150);
+    if (animGenRef.current !== myGen) return;   // cancelled
 
-    // Helper: centre board on a tile using translate inside scale
-    // Formula: tx = BOARD_CENTER - tileX  (keeps tile at board centre after scale)
-    function panToTile(pos) {
-      const { x, y } = getTileCenter(pos);
-      setBoardTX(BOARD_CENTER - x);
-      setBoardTY(BOARD_CENTER - y);
-    }
-
-    // Zoom in, already centred on starting tile
+    // Zoom in, centred on starting tile
     panToTile(fromPos);
     setBoardZoom(ZOOM_IN_SCALE);
 
     // Step through each tile — board follows the avatar
     for (let i = 1; i <= steps; i++) {
-      const nextPos = (fromPos + i) % 40;
       await sleep(STEP_DURATION);
+      if (animGenRef.current !== myGen) return; // cancelled — old position NOT restored
+      const nextPos = (fromPos + i) % 40;
       updateDisplayPositions(dp => ({ ...dp, [playerId]: nextPos }));
       panToTile(nextPos);
     }
+
+    if (animGenRef.current !== myGen) return;
 
     // Snap to actual server position (handles card teleports / go-to-jail)
     updateDisplayPositions(dp => ({ ...dp, [playerId]: toPos }));
@@ -223,6 +249,8 @@ export default function GamePage() {
 
     // Brief pause on landing tile, then zoom out
     await sleep(400);
+    if (animGenRef.current !== myGen) return;
+
     setBoardZoom(1);
     setBoardTX(0);
     setBoardTY(0);
@@ -311,14 +339,19 @@ export default function GamePage() {
           </div>
         </header>
 
-        {/* Main layout */}
-        <div className="flex flex-1 overflow-hidden">
+        {/* Main layout — flex-col on mobile (board 70 / actions 30), flex-row on desktop */}
+        <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
 
-          {/* Board area with zoom wrapper */}
-          <div className="flex-1 flex flex-col items-center justify-center p-2 overflow-auto">
+          {/* ── Board area ── */}
+          {/* Mobile: flex-[7] = 70% of remaining height; Desktop: flex-1 */}
+          <div
+            ref={boardContainerRef}
+            className="flex-[7] md:flex-1 flex items-center justify-center overflow-hidden relative"
+          >
+            {/* Zoom + pan wrapper: scale(fitScale × zoomScale) keeps the tile centred */}
             <div
               style={{
-                transform: `scale(${boardZoom}) translate(${boardTX}px, ${boardTY}px)`,
+                transform: `scale(${boardFitScale * boardZoom}) translate(${boardTX}px, ${boardTY}px)`,
                 transformOrigin: 'center center',
                 transition: `transform ${ZOOM_TRANSITION}`,
                 willChange: 'transform',
@@ -333,8 +366,15 @@ export default function GamePage() {
               />
             </div>
 
-            {/* Dice below board */}
-            <div className="mt-4" style={{ transition: `transform ${ZOOM_TRANSITION}`, transform: `scale(${1 / boardZoom})` }}>
+            {/* Dice — floats above board, counter-scaled so it stays a fixed visual size */}
+            <div
+              className="absolute bottom-2 pointer-events-none"
+              style={{
+                transform: `scale(${1 / (boardFitScale * boardZoom)})`,
+                transformOrigin: 'bottom center',
+                transition: `transform ${ZOOM_TRANSITION}`,
+              }}
+            >
               <Dice
                 d1={diceResult?.d1}
                 d2={diceResult?.d2}
@@ -344,8 +384,11 @@ export default function GamePage() {
             </div>
           </div>
 
-          {/* Right sidebar */}
-          <div className="w-72 flex flex-col border-r border-slate-700 overflow-hidden">
+          {/* ── Actions sidebar ── */}
+          {/* Mobile: flex-[3] = 30% of remaining height, border on top;
+              Desktop: w-72 fixed sidebar, border on right (RTL = right = visual left) */}
+          <div className="flex-[3] md:flex-none md:w-72 flex flex-col overflow-hidden
+                          border-t border-slate-700 md:border-t-0 md:border-r">
             <div className="flex-shrink-0">
               <ActionPanel
                 room={room}
@@ -371,7 +414,7 @@ export default function GamePage() {
                 onUnmortgage={unmortgageProperty}
               />
             </div>
-            <div className="flex-shrink-0 h-36 overflow-auto border-t border-slate-700">
+            <div className="flex-shrink-0 h-28 overflow-auto border-t border-slate-700">
               <EventLog events={room.eventLog}/>
             </div>
           </div>
